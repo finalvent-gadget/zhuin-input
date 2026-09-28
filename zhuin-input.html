@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>注音符号 クリック入力</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a33; --ink:#e8ecff; --muted:#aab4e6; --accent:#7aa2ff; --border:rgba(255,255,255,.12); }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", sans-serif; background: radial-gradient(1200px 800px at 15% 15%, #1a2552 0%, var(--bg) 55%); color: var(--ink); }
+    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px 24px; }
+    header { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+    h1 { font-size: 18px; margin:0; letter-spacing:.02em; }
+    .sub { color: var(--muted); font-size: 13px; }
+
+    .grid { display:grid; grid-template-columns: 1.15fr .85fr; gap: 14px; margin-top: 14px; }
+    @media (max-width: 980px){ .grid{ grid-template-columns: 1fr; } }
+
+    .card { background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); border:1px solid var(--border); border-radius: 16px; padding: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .card h2 { margin:0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
+
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .controls input[type="text"]{
+      flex:1; min-width: 240px; background: rgba(0,0,0,.25); border:1px solid var(--border);
+      color: var(--ink); border-radius: 12px; padding: 10px 12px; font-size: 18px;
+      outline:none;
+    }
+    .controls input[type="text"]:focus{ border-color: rgba(122,162,255,.6); box-shadow: 0 0 0 3px rgba(122,162,255,.18); }
+
+    button {
+      appearance:none; border:1px solid var(--border); background: rgba(0,0,0,.18);
+      color: var(--ink); border-radius: 12px; padding: 10px 12px; font-weight: 600;
+      cursor:pointer; transition: transform .04s ease, border-color .12s ease, background .12s ease;
+    }
+    button:hover{ border-color: rgba(122,162,255,.55); background: rgba(122,162,255,.10); }
+    button:active{ transform: translateY(1px); }
+
+    .kb { display:grid; gap: 8px; }
+    .kbrow { display:grid; gap: 8px; }
+
+    .key {
+      display:flex; align-items:center; justify-content:center;
+      min-height:56px;
+      background: rgba(0,0,0,.10);
+      border:1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px 6px;
+      user-select:none;
+    }
+    .key:focus{ outline: none; box-shadow: 0 0 0 3px rgba(122,162,255,.18); border-color: rgba(122,162,255,.55); }
+
+    .key .py { font-size: 12px; color: var(--muted); line-height: 1; margin-bottom: 6px; }
+    .key .zy { font-size: 22px; line-height: 1; }
+    .key .tone { font-size: 20px; }
+
+    .canvasWrap{ display:grid; grid-template-columns: 1fr; gap: 10px; }
+    canvas{ width:100%; height: 260px; background: rgba(0,0,0,.22); border:1px solid var(--border); border-radius: 14px; }
+
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .hint { color: var(--muted); font-size: 12px; line-height:1.5; }
+    .pill { display:inline-flex; align-items:center; gap:8px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border); background: rgba(0,0,0,.16); color: var(--muted); font-size: 12px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* 画像の並びに寄せて、左（声母）と右（韻母）を色で軽く区別 */
+    .key.group-initial { background: rgba(122,162,255,.08); }
+    .key.group-final { background: rgba(255, 166, 87, .08); }
+    .key.group-tone { background: rgba(255,255,255,.06); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>注音符号 クリック入力</h1>
+      <div class="sub">アップロード画像の配列（注音キーボード風）に近い並び。クリックで追加／Shift+クリックで置換。</div>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <h2>入力表（拼音＋注音）</h2>
+        <div class="row">
+          <div class="pill">クリック: 追加 / Shift+クリック: 置換</div>
+          <div class="pill">⌫: 末尾削除 / Esc: クリア</div>
+        </div>
+        <div id="pad" class="kb" aria-label="注音符号ボタン群"></div>
+        <div class="hint" style="margin-top:10px;">
+          ※ これは「注音キーボード配列」に寄せた表示です（学習用）。実際の端末配列とは一部異なることがあります。
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>入力欄 & 描画</h2>
+        <div class="controls">
+          <input id="field" type="text" name="zhuyin" inputmode="text" autocomplete="off" spellcheck="false" placeholder="ここに注音符号が入ります（例: ㄏㄨㄟˋ）" />
+          <button type="button" id="back" title="末尾を削除">⌫</button>
+          <button type="button" id="clear" title="全消去">クリア</button>
+        </div>
+        <div class="canvasWrap" style="margin-top:10px;">
+          <canvas id="cv" width="1000" height="420" aria-label="描画エリア"></canvas>
+          <div class="row">
+            <div class="hint">キャンバスはフォント描画です（手書き筆跡ではありません）。</div>
+            <div class="pill"><span>現在:</span> <span id="preview" class="mono"></span></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<script>
+  const pad = document.getElementById('pad');
+  const field = document.getElementById('field');
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const preview = document.getElementById('preview');
+
+  // HTMLに安全に埋め込む（innerHTML使用のため）
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'",'&#39;');
+  }
+
+  // 画像の並びに近い「注音キーボード風」レイアウト
+  // py: 上段（拼音 / キー表記）, zy: 下段（注音符号）
+  const layout = [
+    [
+      {py:'b',  zy:'ㄅ', group:'initial'},
+      {py:'d',  zy:'ㄉ', group:'initial'},
+      {py:'v',  zy:'ˇ', group:'tone'},
+      // ここがエラー原因だった箇所: バックスラッシュは \\ とエスケープする
+      {py:'\\', zy:'ˋ', group:'tone'},
+      {py:'zh', zy:'ㄓ', group:'initial'},
+      {py:'/',  zy:'ˊ', group:'tone'},
+      {py:'.',  zy:'˙', group:'tone'},
+      {py:'a',  zy:'ㄚ', group:'final'},
+      {py:'ai', zy:'ㄞ', group:'final'},
+      {py:'an', zy:'ㄢ', group:'final'},
+      {py:'er', zy:'ㄦ', group:'final'},
+    ],
+    [
+      {py:'p',  zy:'ㄆ', group:'initial'},
+      {py:'t',  zy:'ㄊ', group:'initial'},
+      {py:'g',  zy:'ㄍ', group:'initial'},
+      {py:'j',  zy:'ㄐ', group:'initial'},
+      {py:'ch', zy:'ㄔ', group:'initial'},
+      {py:'z',  zy:'ㄗ', group:'initial'},
+      {py:'i',  zy:'ㄧ', group:'final'},
+      {py:'o',  zy:'ㄛ', group:'final'},
+      {py:'ei', zy:'ㄟ', group:'final'},
+      {py:'en', zy:'ㄣ', group:'final'},
+    ],
+    [
+      {py:'m',   zy:'ㄇ', group:'initial'},
+      {py:'n',   zy:'ㄋ', group:'initial'},
+      {py:'k',   zy:'ㄎ', group:'initial'},
+      {py:'q',   zy:'ㄑ', group:'initial'},
+      {py:'sh',  zy:'ㄕ', group:'initial'},
+      {py:'c',   zy:'ㄘ', group:'initial'},
+      {py:'u',   zy:'ㄨ', group:'final'},
+      {py:'e',   zy:'ㄜ', group:'final'},
+      {py:'ao',  zy:'ㄠ', group:'final'},
+      {py:'ang', zy:'ㄤ', group:'final'},
+    ],
+    [
+      {py:'f',   zy:'ㄈ', group:'initial'},
+      {py:'l',   zy:'ㄌ', group:'initial'},
+      {py:'h',   zy:'ㄏ', group:'initial'},
+      {py:'x',   zy:'ㄒ', group:'initial'},
+      {py:'r',   zy:'ㄖ', group:'initial'},
+      {py:'s',   zy:'ㄙ', group:'initial'},
+      {py:'ü',   zy:'ㄩ', group:'final'},
+      {py:'ê',   zy:'ㄝ', group:'final'},
+      {py:'ou',  zy:'ㄡ', group:'final'},
+      {py:'eng', zy:'ㄥ', group:'final'},
+    ],
+  ];
+
+  // 追加で使うことが多い複合韻（必要ならここに追加）
+  const extraCombos = [
+    {py:'iao',  zy:'ㄧㄠ'}, {py:'you',  zy:'ㄧㄡ'}, {py:'ian',  zy:'ㄧㄢ'}, {py:'in',   zy:'ㄧㄣ'}, {py:'iang', zy:'ㄧㄤ'}, {py:'ing',  zy:'ㄧㄥ'},
+    {py:'ua',   zy:'ㄨㄚ'}, {py:'uo',   zy:'ㄨㄛ'}, {py:'uai',  zy:'ㄨㄞ'}, {py:'ui',   zy:'ㄨㄟ'}, {py:'uan',  zy:'ㄨㄢ'}, {py:'un',   zy:'ㄨㄣ'}, {py:'ong',  zy:'ㄨㄥ'},
+    {py:'yue',  zy:'ㄩㄝ'}, {py:'yuan', zy:'ㄩㄢ'}, {py:'yun',  zy:'ㄩㄣ'}, {py:'iong', zy:'ㄩㄥ'},
+  ];
+
+  function draw(text){
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = cv.clientWidth;
+    const cssH = cv.clientHeight;
+    cv.width = Math.floor(cssW * dpr);
+    cv.height = Math.floor(cssH * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+
+    ctx.clearRect(0,0,cssW,cssH);
+
+    // ガイド
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(10,10,cssW-20,cssH-20);
+    ctx.beginPath();
+    ctx.moveTo(10, cssH/2);
+    ctx.lineTo(cssW-10, cssH/2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // 文字
+    const fontSize = Math.min(170, Math.max(70, Math.floor(cssW/6)));
+    ctx.fillStyle = '#e8ecff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${fontSize}px system-ui, -apple-system, 'Noto Sans TC', 'Noto Sans', 'PingFang TC', 'Microsoft JhengHei', sans-serif`;
+
+    const t = (text || '').trim();
+    ctx.fillText(t || '（ここに描画）', cssW/2, cssH/2);
+  }
+
+  function sync(){
+    preview.textContent = field.value;
+    draw(field.value);
+  }
+
+  function addSymbol(sym, replace=false){
+    if (replace) field.value = sym;
+    else field.value += sym;
+    field.focus();
+    sync();
+  }
+
+  function makeKey({py, zy, group}){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `key group-${group}`;
+    b.setAttribute('aria-label', `${py} ${zy}`);
+
+    const isTone = group === 'tone';
+    b.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;">
+        <div class="py">${escapeHtml(py)}</div>
+        <div class="${isTone ? 'tone' : 'zy'}">${escapeHtml(zy)}</div>
+      </div>
+    `;
+
+    b.addEventListener('click', (e)=>{
+      const replace = e.shiftKey;
+      addSymbol(zy, replace);
+    });
+    return b;
+  }
+
+  function renderPad(){
+    pad.innerHTML = '';
+    layout.forEach(row => {
+      const r = document.createElement('div');
+      r.className = 'kbrow';
+      r.style.gridTemplateColumns = `repeat(${row.length}, minmax(0, 1fr))`;
+      row.forEach(cell => r.appendChild(makeKey(cell)));
+      pad.appendChild(r);
+    });
+
+    // 追加の複合韻（折りたたみ）
+    const details = document.createElement('details');
+    details.style.marginTop = '10px';
+    details.innerHTML = `<summary style="cursor:pointer;color:var(--muted);font-size:12px;">複合韻（追加）を表示</summary>`;
+    const r = document.createElement('div');
+    r.className = 'kbrow';
+    r.style.marginTop = '10px';
+    r.style.gridTemplateColumns = 'repeat(6, minmax(0, 1fr))';
+    extraCombos.forEach(it => r.appendChild(makeKey({py:it.py, zy:it.zy, group:'final'})));
+    details.appendChild(r);
+    pad.appendChild(details);
+  }
+
+  // 入力欄の操作
+  document.getElementById('back').addEventListener('click', ()=>{
+    field.value = field.value.slice(0, -1);
+    sync();
+  });
+  document.getElementById('clear').addEventListener('click', ()=>{
+    field.value = '';
+    sync();
+    field.focus();
+  });
+
+  // キーボードショートカット
+  window.addEventListener('keydown', (e)=>{
+    if (e.key === 'Escape') {
+      field.value = '';
+      sync();
+      return;
+    }
+    if (e.key === 'Backspace' && document.activeElement !== field) {
+      field.value = field.value.slice(0, -1);
+      sync();
+    }
+  });
+
+  field.addEventListener('input', sync);
+
+  // --- Minimal tests (console) ---
+  function runTests(){
+    try {
+      // 1) バックスラッシュキーが存在し、表示用文字列は "\\" であること
+      const hasBackslash = layout.flat().some(k => k.py === '\\' && k.zy === 'ˋ');
+      console.assert(hasBackslash, 'Test failed: backslash key (py="\\") with zy="ˋ" should exist');
+
+      // 2) escapeHtml が壊れていないこと
+      console.assert(escapeHtml('<>&"\'') === '&lt;&gt;&amp;&quot;&#39;', 'Test failed: escapeHtml should escape HTML special chars');
+
+      // 3) makeKey が例外を投げず要素を返すこと
+      const el = makeKey({py:'\\', zy:'ˋ', group:'tone'});
+      console.assert(el instanceof HTMLButtonElement, 'Test failed: makeKey should return a button');
+
+      // 4) 描画関数が空文字でも落ちないこと
+      draw('');
+      console.info('[Tests] OK');
+    } catch (err) {
+      console.error('[Tests] FAILED', err);
+    }
+  }
+
+  // 初期描画
+  renderPad();
+  sync();
+  runTests();
+
+  // リサイズ対応
+  const ro = new ResizeObserver(()=> draw(field.value));
+  ro.observe(cv);
+</script>
+</body>
+</html>
